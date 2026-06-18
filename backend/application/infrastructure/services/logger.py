@@ -1,4 +1,5 @@
 # ── state / message reports ───────────────────────────────────────────────
+
 def _msg_label(msg) -> str:
     """One-line description of a LangChain message."""
     name = type(msg).__name__

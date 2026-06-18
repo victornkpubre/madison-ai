@@ -1,3 +1,18 @@
+import json
+from langgraph.types import Command
+
+from backend.config import settings
+from backend.application.infrastructure.services.logger import _state_summary, _return_summary
+from backend.application.requests import ResumeRequest
+
+
+def sse(obj: dict) -> str:
+    return f"data: {json.dumps(obj)}\n\n"
+
+def _resume_command(req: ResumeRequest) -> Command:
+    if req.value is not None:
+        return Command(resume=req.value)
+    return Command(resume={"action": req.action, "text": req.text})
 
 
 async def stream_graph(graph, graph_input, config,
@@ -80,10 +95,3 @@ async def stream_graph(graph, graph_input, config,
         yield sse({"type": "interrupt", "value": pending[0].value})
     else:
         yield sse({"type": "done"})
-
-
-def _resume_command(req: ResumeRequest) -> Command:
-    if req.value is not None:
-        return Command(resume=req.value)
-    return Command(resume={"action": req.action, "text": req.text})
-

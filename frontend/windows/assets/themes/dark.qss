@@ -1,0 +1,261 @@
+/* ══════════════════════════════════════════════
+   Dark theme  (Catppuccin Mocha palette)
+   Apply with:
+     app.setStyleSheet(open("assets/themes/dark.qss").read())
+   ══════════════════════════════════════════════ */
+
+/* Base — transparent so the floating button's
+   painted circle shows through correctly        */
+QWidget {
+    background-color: transparent;
+    color: #CDD6F4;
+    font-family: "Segoe UI", "Arial", sans-serif;
+    font-size: 13px;
+    border: none;
+    outline: 0;
+}
+
+/* ── Panel frame ────────────────────────────── */
+#MenuPanel {
+    background-color: #1E1E2E;
+    border: 1px solid #45475A;
+    border-radius: 12px;
+}
+
+/* ── Header ─────────────────────────────────── */
+#PanelTitle {
+    font-size: 13px;
+    font-weight: 600;
+    color: #CDD6F4;
+    background: transparent;
+}
+
+#CloseBtn {
+    background: transparent;
+    color: #585B70;
+    border-radius: 11px;
+    font-size: 11px;
+    padding: 0;
+}
+#CloseBtn:hover {
+    background-color: #45475A;
+    color: #CDD6F4;
+}
+#CloseBtn:pressed {
+    background-color: #585B70;
+}
+
+/* ── Divider ────────────────────────────────── */
+#Divider {
+    background-color: #45475A;
+    border: none;
+}
+
+/* ── Action buttons ─────────────────────────── */
+#ActionBtn {
+    background-color: #313244;
+    color: #CDD6F4;
+    border: 1px solid #45475A;
+    border-radius: 8px;
+    padding: 6px 12px;
+    text-align: left;
+}
+#ActionBtn:hover {
+    background-color: #45475A;
+    border-color: #7986CB;
+}
+#ActionBtn:pressed {
+    background-color: #5C6BC0;
+    border-color: #5C6BC0;
+    color: #FFFFFF;
+}
+
+/* ── Settings button ────────────────────────── */
+#SecondaryBtn {
+    background-color: transparent;
+    color: #7C7F93;
+    border: 1px solid #45475A;
+    border-radius: 6px;
+    padding: 5px 10px;
+    text-align: left;
+}
+#SecondaryBtn:hover {
+    background-color: #313244;
+    color: #CDD6F4;
+    border-color: #7986CB;
+}
+#SecondaryBtn:pressed {
+    background-color: #45475A;
+}
+
+/* ── Quit button ────────────────────────────── */
+#DangerBtn {
+    background-color: transparent;
+    color: #F38BA8;
+    border: 1px solid #45475A;
+    border-radius: 6px;
+    padding: 5px 10px;
+}
+#DangerBtn:hover {
+    background-color: rgba(243, 139, 168, 0.15);
+    border-color: #F38BA8;
+}
+#DangerBtn:pressed {
+    background-color: rgba(243, 139, 168, 0.30);
+}
+
+/* MenuContent — must be transparent so the painted panel bg shows through */
+#MenuContent { background: transparent; }
+
+/* ── Navigation & page elements ──────────────────── */
+
+#PanelHeader {
+    background: transparent;
+}
+
+#BackBtn {
+    background: transparent;
+    color: #7986CB;
+    border: 1px solid #45475A;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 0;
+}
+#BackBtn:hover {
+    background: #313244;
+    color: #CDD6F4;
+}
+
+#NavBtn {
+    background-color: transparent;
+    color: #CDD6F4;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    text-align: left;
+    font-size: 13px;
+}
+#NavBtn:hover {
+    background-color: #313244;
+}
+#NavBtn:pressed {
+    background-color: #45475A;
+}
+
+#ToolsToggle {
+    background: transparent;
+    color: #6C7086;
+    border: none;
+    text-align: left;
+    font-size: 12px;
+    padding: 4px 10px;
+}
+#ToolsToggle:hover {
+    color: #CDD6F4;
+    background: #252535;
+    border-radius: 6px;
+}
+
+#ToolsContent {
+    background: transparent;
+}
+
+#ToolRow {
+    background: transparent;
+    color: #7C7F93;
+    border: none;
+    text-align: left;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+}
+#ToolRow:hover {
+    background: #252535;
+    color: #CDD6F4;
+}
+
+#DbBadge {
+    color: #A6E3A1;
+    font-size: 10px;
+    background: transparent;
+}
+
+#DotOn  { color: #A6E3A1; font-size: 12px; background: transparent; }
+#DotOff { color: #45475A; font-size: 12px; background: transparent; }
+
+#ExportBtn {
+    background: transparent;
+    color: #7986CB;
+    border: 1px solid #45475A;
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 0 8px;
+}
+#ExportBtn:hover {
+    background: #313244;
+    color: #CDD6F4;
+}
+
+/* Chat page */
+#ChatHistory {
+    background: #16162A;
+    border: none;
+    color: #CDD6F4;
+    font-size: 12px;
+    padding: 6px;
+}
+
+#InputRow {
+    background: transparent;
+}
+
+#ChatInput {
+    background: #252535;
+    border: 1px solid #45475A;
+    border-radius: 6px;
+    color: #CDD6F4;
+    font-size: 12px;
+    padding: 5px 9px;
+    selection-background-color: #5C6BC0;
+}
+#ChatInput:focus {
+    border-color: #7986CB;
+}
+
+#SendBtn {
+    background: #5C6BC0;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    padding: 5px 10px;
+}
+#SendBtn:hover { background: #7986CB; }
+#SendBtn:disabled { opacity: 0.4; }
+
+/* Dashboard */
+#StatsBar { background: transparent; }
+#StatsLabel { color: #6C7086; font-size: 12px; background: transparent; }
+
+#CaptureTable {
+    background: #16162A;
+    alternate-background-color: #1E1E35;
+    color: #CDD6F4;
+    gridline-color: transparent;
+    border: none;
+    font-size: 12px;
+    selection-background-color: #313255;
+}
+QHeaderView::section {
+    background: #252535;
+    color: #7C7F93;
+    border: none;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+#Toolbar { background: transparent; }
+
+#FooterRow { background: transparent; }

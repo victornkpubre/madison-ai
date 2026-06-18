@@ -1,0 +1,22 @@
+services:
+
+  # ── Postgres ────────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     streameye
+      POSTGRES_PASSWORD: streameye
+      POSTGRES_DB:       streameye
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"          # remove this line once the backend is containerised
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streameye -d streameye"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

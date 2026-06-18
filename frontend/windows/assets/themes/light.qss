@@ -1,0 +1,104 @@
+/* ══════════════════════════════════════════════
+   Light theme
+   ══════════════════════════════════════════════ */
+
+QWidget {
+    background-color: transparent;
+    color: #1A1B2E;
+    font-family: "Segoe UI", "Arial", sans-serif;
+    font-size: 13px;
+    border: none;
+    outline: 0;
+}
+
+/* ── Panel frame ────────────────────────────── */
+#MenuPanel {
+    background-color: #FFFFFF;
+    border: 1px solid #DEE1F0;
+    border-radius: 12px;
+}
+
+/* ── Header ─────────────────────────────────── */
+#PanelTitle {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1A1B2E;
+    background: transparent;
+}
+
+#CloseBtn {
+    background: transparent;
+    color: #AAADC4;
+    border-radius: 11px;
+    font-size: 11px;
+    padding: 0;
+}
+#CloseBtn:hover {
+    background-color: #F0F1F8;
+    color: #1A1B2E;
+}
+#CloseBtn:pressed {
+    background-color: #DEE1F0;
+}
+
+/* ── Divider ────────────────────────────────── */
+#Divider {
+    background-color: #DEE1F0;
+    border: none;
+}
+
+/* ── Action buttons ─────────────────────────── */
+#ActionBtn {
+    background-color: #F5F6FA;
+    color: #1A1B2E;
+    border: 1px solid #DEE1F0;
+    border-radius: 8px;
+    padding: 6px 12px;
+    text-align: left;
+}
+#ActionBtn:hover {
+    background-color: #E8EAF6;
+    border-color: #7986CB;
+}
+#ActionBtn:pressed {
+    background-color: #5C6BC0;
+    border-color: #5C6BC0;
+    color: #FFFFFF;
+}
+
+/* ── Settings button ────────────────────────── */
+#SecondaryBtn {
+    background-color: transparent;
+    color: #AAADC4;
+    border: 1px solid #DEE1F0;
+    border-radius: 6px;
+    padding: 5px 10px;
+    text-align: left;
+}
+#SecondaryBtn:hover {
+    background-color: #F5F6FA;
+    color: #1A1B2E;
+    border-color: #7986CB;
+}
+#SecondaryBtn:pressed {
+    background-color: #E8EAF6;
+}
+
+/* ── Quit button ────────────────────────────── */
+#DangerBtn {
+    background-color: transparent;
+    color: #D94B6F;
+    border: 1px solid #DEE1F0;
+    border-radius: 6px;
+    padding: 5px 10px;
+}
+#DangerBtn:hover {
+    background-color: rgba(217, 75, 111, 0.08);
+    border-color: #D94B6F;
+}
+#DangerBtn:pressed {
+    background-color: rgba(217, 75, 111, 0.18);
+}
+
+/* MenuContent — must be transparent so the painted panel bg shows through */
+#MenuContent { background: transparent; }

@@ -1,4 +1,11 @@
+"""
+application/core/settings.py
+─────────────────────
+Load and persist user preferences to config/settings.json.
 
+The settings dict is intentionally plain so it's easy to extend —
+just add a new key to _DEFAULTS and it will appear automatically.
+"""
 import json
 import os
 from typing import Any
