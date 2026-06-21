@@ -1,32 +1,41 @@
 """
 application/ui/pages/dashboard_page.py
 ───────────────────────────────
-Database viewer — accessible from the home menu's "Dashboard" item.
+Database viewer — accessible from the home menu's "Database" item.
 
-Shows the captures table with columns:
-  ID | TikTok Name | Telegram | Captured At
+Read-only browser over the backend's data. Pick a view from the selector
+to see its columns and rows: creator profile, idea profile, captures,
+captured contacts, Telegram users, email accounts, and message templates.
 
-Buttons: Refresh · Export to Excel · Clear database
+The data is fetched live from the backend (GET /database/views and
+/database/views/{key}); the base URL is derived from `agent_url` in
+config/settings.json. Backend data is read-only here, so there is no
+"clear" action — only Refresh and Export to Excel.
 """
+from urllib.parse import urlsplit
+
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFrame, QTableWidget, QTableWidgetItem,
-    QHeaderView, QMessageBox, QSizePolicy,
+    QHeaderView, QComboBox,
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QColor
 
-from app.core.database import CaptureDatabase
+from app.core.settings import load_settings
+from app.utils.db_api_worker import DbApiWorker
 
 
 class DashboardPage(QWidget):
     go_back       = pyqtSignal()
     request_close = pyqtSignal()
 
-    def __init__(self, db: CaptureDatabase, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("DashboardPage")
-        self.db = db
+        self._views: list[dict] = []           # [{key, label}, ...]
+        self._columns: list[str] = []
+        self._rows: list[list] = []
+        self._threads: set = set()             # strong refs to live workers
         self._build()
 
     # ── Layout ─────────────────────────────────────────────────────────────────
@@ -92,8 +101,15 @@ class DashboardPage(QWidget):
         w.setFixedHeight(32)
         lay = QHBoxLayout(w)
         lay.setContentsMargins(12, 0, 12, 0)
+        lay.setSpacing(8)
 
-        self._count_lbl = QLabel("0 captures")
+        self._table_selector = QComboBox()
+        self._table_selector.setObjectName("TableSelector")
+        self._table_selector.setCursor(Qt.PointingHandCursor)
+        self._table_selector.currentIndexChanged.connect(self._on_view_changed)
+        lay.addWidget(self._table_selector)
+
+        self._count_lbl = QLabel("0 rows")
         self._count_lbl.setObjectName("StatsLabel")
         lay.addWidget(self._count_lbl)
         lay.addStretch()
@@ -107,22 +123,13 @@ class DashboardPage(QWidget):
         return w
 
     def _make_table(self) -> QTableWidget:
-        cols = ["ID", "TikTok Name", "Telegram", "Captured At"]
-        self._table = QTableWidget(0, len(cols))
+        self._table = QTableWidget(0, 0)
         self._table.setObjectName("CaptureTable")
-        self._table.setHorizontalHeaderLabels(cols)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectRows)
         self._table.setAlternatingRowColors(True)
         self._table.verticalHeader().setVisible(False)
         self._table.setShowGrid(False)
-
-        hdr = self._table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)   # ID
-        hdr.setSectionResizeMode(1, QHeaderView.Stretch)            # TikTok
-        hdr.setSectionResizeMode(2, QHeaderView.Stretch)            # Telegram
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)   # Time
-
         return self._table
 
     def _make_toolbar(self) -> QWidget:
@@ -133,64 +140,140 @@ class DashboardPage(QWidget):
         lay.setContentsMargins(10, 6, 10, 8)
         lay.setSpacing(8)
 
-        clear = QPushButton("🗑  Clear table")
-        clear.setObjectName("DangerBtn")
-        clear.setFixedHeight(30)
-        clear.setCursor(Qt.PointingHandCursor)
-        clear.clicked.connect(self._confirm_clear)
-
         export = QPushButton("Export to Excel")
         export.setObjectName("ActionBtn")
         export.setFixedHeight(30)
         export.setCursor(Qt.PointingHandCursor)
         export.clicked.connect(self._export)
 
-        lay.addWidget(clear)
         lay.addStretch()
         lay.addWidget(export)
         return w
 
+    # ── Backend access ───────────────────────────────────────────────────────────
+
+    def _base_url(self) -> str:
+        """Derive the backend root (scheme://host:port) from agent_url."""
+        agent_url = load_settings().get("agent_url", "")
+        parts = urlsplit(agent_url)
+        if parts.scheme and parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}"
+        return ""
+
+    def _fetch(self, path: str, on_loaded):
+        """Spawn a worker to GET {base}{path} and call on_loaded(json)."""
+        base = self._base_url()
+        if not base:
+            self._count_lbl.setText("No agent_url in config/settings.json")
+            return
+        worker = DbApiWorker(f"{base}{path}")
+        worker.loaded.connect(on_loaded)
+        worker.failed.connect(lambda msg: self._count_lbl.setText(msg))
+        self._track(worker)
+        worker.start()
+
+    def _track(self, worker):
+        """Keep a strong ref until Qt's finished signal, then drop and delete."""
+        self._threads.add(worker)
+        worker.finished.connect(lambda w=worker: self._threads.discard(w))
+        worker.finished.connect(worker.deleteLater)
+
     # ── Data ───────────────────────────────────────────────────────────────────
 
     def refresh(self):
-        """Reload data from the database."""
-        rows = self.db.all_rows()
-        self._table.setRowCount(0)
+        """Reload the list of views, then the currently selected view's data."""
+        self._count_lbl.setText("Loading…")
+        self._fetch("/database/views", self._on_views_loaded)
 
-        for row in rows:
+    def _on_views_loaded(self, payload):
+        views = (payload or {}).get("views", [])
+        self._views = views
+        current = self._table_selector.currentData()
+
+        self._table_selector.blockSignals(True)
+        self._table_selector.clear()
+        for v in views:
+            self._table_selector.addItem(v.get("label", v.get("key", "")), v.get("key"))
+        # Restore the previous selection if it still exists.
+        if current is not None:
+            idx = self._table_selector.findData(current)
+            if idx >= 0:
+                self._table_selector.setCurrentIndex(idx)
+        self._table_selector.blockSignals(False)
+
+        if not views:
+            self._count_lbl.setText("No data")
+            self._table.setRowCount(0)
+            self._table.setColumnCount(0)
+            return
+        self._load_view_data()
+
+    def _on_view_changed(self, _index: int):
+        self._load_view_data()
+
+    def _current_key(self) -> str:
+        return self._table_selector.currentData() or ""
+
+    def _load_view_data(self):
+        key = self._current_key()
+        if not key:
+            return
+        self._count_lbl.setText("Loading…")
+        self._fetch(f"/database/views/{key}", self._on_view_data_loaded)
+
+    def _on_view_data_loaded(self, payload):
+        payload = payload or {}
+        self._columns = payload.get("columns", [])
+        self._rows = payload.get("rows", [])
+
+        self._table.setRowCount(0)
+        self._table.setColumnCount(len(self._columns))
+        self._table.setHorizontalHeaderLabels(self._columns)
+
+        hdr = self._table.horizontalHeader()
+        for c in range(len(self._columns)):
+            hdr.setSectionResizeMode(
+                c, QHeaderView.ResizeToContents if c == 0 else QHeaderView.Stretch)
+
+        for row in self._rows:
             r = self._table.rowCount()
             self._table.insertRow(r)
             self._table.setRowHeight(r, 28)
-
-            for c, val in enumerate([
-                str(row["id"]),
-                row["tiktok_name"] or "",
-                row["telegram"]    or "",
-                row["captured_at"] or "",
-            ]):
-                item = QTableWidgetItem(val)
+            for c, val in enumerate(row):
+                item = QTableWidgetItem("" if val is None else str(val))
                 item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
                 self._table.setItem(r, c, item)
 
-        count = len(rows)
-        self._count_lbl.setText(
-            f"{count} capture{'s' if count != 1 else ''}"
-        )
+        count = len(self._rows)
+        self._count_lbl.setText(f"{count} row{'s' if count != 1 else ''}")
+
+    # ── Export ───────────────────────────────────────────────────────────────────
 
     def _export(self):
+        if not self._columns:
+            self._count_lbl.setText("Nothing to export")
+            return
         try:
-            path = self.db.export_excel()
-            # Show brief confirmation in the stats bar
+            import os
+            import pandas as pd
+        except ImportError:
+            self._count_lbl.setText("Export needs pandas + openpyxl")
+            return
+        try:
+            os.makedirs("exports", exist_ok=True)
+            path = f"exports/{self._current_key() or 'view'}.xlsx"
+            pd.DataFrame(self._rows, columns=self._columns).to_excel(path, index=False)
             self._count_lbl.setText(f"✓ Exported → {path}")
         except Exception as exc:
             self._count_lbl.setText(f"Export failed: {exc}")
 
-    def _confirm_clear(self):
-        mb = QMessageBox(self)
-        mb.setWindowTitle("Clear database")
-        mb.setText("Delete all captured rows?  This cannot be undone.")
-        mb.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
-        mb.setDefaultButton(QMessageBox.Cancel)
-        if mb.exec_() == QMessageBox.Yes:
-            self.db.clear()
-            self.refresh()
+    # ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+    def cleanup(self):
+        """Stop every running worker so Qt never destroys a live QThread on exit."""
+        for worker in list(self._threads):
+            try:
+                worker.stop()
+            except Exception:
+                pass
+        self._threads.clear()

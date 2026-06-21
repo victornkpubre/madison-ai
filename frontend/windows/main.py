@@ -34,12 +34,18 @@ def main():
     tray = AppTray(btn)
     tray.show()
 
+    # Stop worker threads and release resources before the process exits — without
+    # this, Qt destroys QThreads that are still running ("QThread: Destroyed while
+    # thread is still running") and can crash on quit.
+    app.aboutToQuit.connect(btn.cleanup)
+
     # ── Optional: global hotkey ───────────────────────────────────────────────
     try:
         from app.utils.hotkeys import HotkeyManager
         hk = HotkeyManager()
         hk.triggered.connect(lambda _: btn.toggle_panel())
         hk.register(settings.get("hotkey", "ctrl+shift+space"))
+        app.aboutToQuit.connect(hk.unregister_all)
         print(f"[hotkey] {settings.get('hotkey', 'ctrl+shift+space')} registered")
     except Exception as exc:
         print(f"[hotkey] not available — {exc}")

@@ -1,7 +1,7 @@
 """
 application/ui/pages/chat_page.py  (v4 — assistant + slice/record capture + ask)
 ─────────────────────────────────────────────────────────────────────────
-Talks to the creator-assistant backend (/assist, /assist/resume):
+Talks to the creator-assistant backend (/chat, /resume):
 
   send a request → assistant may ask for fields/count (ask_user interrupt)
                  → assistant captures records in slices (record_screen interrupt)
@@ -10,8 +10,8 @@ Talks to the creator-assistant backend (/assist, /assist/resume):
 Also keeps the viewer-reply approval bar (record-screen-unrelated interrupts).
 
 config/settings.json:
-  { "agent_url": "http://localhost:8000/assist",
-    "resume_url": "http://localhost:8000/assist/resume" }
+  { "agent_url": "http://localhost:8000/chat",
+    "resume_url": "http://localhost:8000/resume" }
 """
 import uuid
 
@@ -36,8 +36,12 @@ _C_AGENT_FG  = QColor("#CDD6F4")
 _C_LABEL_FG  = QColor("#7986CB")
 _C_SYS_FG    = QColor("#6C7086")
 _C_ERR_FG    = QColor("#F38BA8")
-_FONT        = QFont("Segoe UI", 12)
-_FONT_SMALL  = QFont("Segoe UI", 10)
+# Streamed-token fonts. Use pixel sizes so they match the HTML message
+# bubbles (which use font-size:12px / 10px) exactly — a point size here
+# (e.g. 12pt ≈ 16px) made streamed replies render larger than the bubbles,
+# so the chat font looked non-uniform.
+_FONT        = QFont("Segoe UI"); _FONT.setPixelSize(12)
+_FONT_SMALL  = QFont("Segoe UI"); _FONT_SMALL.setPixelSize(10)
 
 
 class ChatPage(QWidget):
@@ -51,10 +55,18 @@ class ChatPage(QWidget):
         self.setObjectName("ChatPage")
         self.db      = db
         self._worker = None
+        # Strong refs to every live QThread. self._worker / self._cap_worker are
+        # only control-flow handles and get cleared from inside the workers' own
+        # done/payload signals — which fire BEFORE run() returns. Dropping the
+        # last Python ref there lets the GC destroy a still-running QThread
+        # ("QThread: Destroyed while thread is still running" -> crash). This set
+        # holds each worker alive until Qt's finished signal, which fires only
+        # after run() has fully returned.
+        self._threads = set()
 
         # ── conversation / capture state ──
         self._thread_id       = None
-        self._chat_id         = "123456"
+        self._chat_id         = ""
         self._pending         = None      # reply-approval payload
         self._edit_mode       = False
         self._resume_action   = None
@@ -63,9 +75,27 @@ class ChatPage(QWidget):
         self._stream_open     = False     # lazy stream bubble open?
 
         self._build()
-        self._add_system(
-            "Assistant ready — tell me what to capture (e.g. "
-            "\"capture 20 tiktok usernames and telegram numbers\")."
+        self._add_onboarding_message()
+
+    def _add_onboarding_message(self):
+        self.add_agent_message(
+            "Hi, I'm your Marketing Agent 👋\n\n"
+            "I'm here to grow your TikTok LIVE channel — turning your stream "
+            "into leads, your chat into audience insight, and that insight "
+            "into a content plan that actually fits who's watching. Here's how:\n\n"
+            "• Capture leads — pull usernames, Telegram handles, and emails "
+            "straight out of your live chat while you stream\n"
+            "• Know your audience — turn what's said in chat into real "
+            "intelligence: trending topics, sentiment, and the questions "
+            "you haven't answered yet\n"
+            "• Plan content that lands — once I know your niche and audience, "
+            "I generate ideas grounded in real data, not generic advice\n"
+            "• Follow up automatically — draft and send personalised "
+            "Telegram or email campaigns using templates in your own voice\n\n"
+            "Tell me a bit about yourself and your content to get started — "
+            "or just say hi, and I'll figure out the best next step for your "
+            "growth, whether that's setting you up or putting data you "
+            "already have to work."
         )
 
     # ── Layout ─────────────────────────────────────────────────────────────────
@@ -88,7 +118,7 @@ class ChatPage(QWidget):
         back.setFixedSize(28, 28); back.setCursor(Qt.PointingHandCursor)
         back.clicked.connect(self._on_back)
         dot = QLabel("●"); dot.setObjectName("DotOn"); dot.setFixedWidth(14)
-        title = QLabel("OCR Agent"); title.setObjectName("PanelTitle")
+        title = QLabel("Marketing Agent"); title.setObjectName("PanelTitle")
         export = QPushButton("Export DB"); export.setObjectName("ExportBtn")
         export.setFixedHeight(24); export.setCursor(Qt.PointingHandCursor)
         export.clicked.connect(self._export_db)
@@ -240,6 +270,7 @@ class ChatPage(QWidget):
             from app.utils.capture_request_worker import CaptureRequestWorker
             self._cap_worker = CaptureRequestWorker(value)
             self._cap_worker.finished_payload.connect(self._on_capture_done)
+            self._track(self._cap_worker)
             self._cap_worker.start()
             return
 
@@ -276,6 +307,7 @@ class ChatPage(QWidget):
         self._worker.interrupt.connect(self._on_interrupt)
         self._worker.done.connect(self._on_stream_done)
         self._worker.error.connect(self._on_stream_error)
+        self._track(self._worker)
         self._worker.start()
 
     def _resume_url(self) -> str:
@@ -300,6 +332,7 @@ class ChatPage(QWidget):
             extra_payload={"thread_id": self._thread_id, "action": action, "text": ""})
         self._worker.done.connect(self._on_resume_done)
         self._worker.error.connect(self._on_stream_error)
+        self._track(self._worker)
         self._worker.start()
 
     def _start_edit(self):
@@ -345,6 +378,7 @@ class ChatPage(QWidget):
             self._resume_action = "edit"
             self._worker.done.connect(self._on_resume_done)
             self._worker.error.connect(self._on_stream_error)
+            self._worker.finished.connect(self._worker.deleteLater)
             self._worker.start()
             return
 
@@ -355,16 +389,20 @@ class ChatPage(QWidget):
 
         settings  = load_settings()
         agent_url = settings.get("agent_url", "")
-        self._chat_id = settings.get("viewer_chat_id", "123456")
+        self._chat_id = settings.get("viewer_chat_id", "")
         if not agent_url:
             self._begin_stream(); self._stream_open = True
             self._on_chunk('No agent_url in config/settings.json.\n'
-                           'Add: "agent_url": "http://localhost:8000/assist"')
+                           'Add: "agent_url": "http://localhost:8000/chat"')
             self._on_stream_done()
             return
 
         from app.utils.sse_worker import SSEWorker
-        self._thread_id = str(uuid.uuid4())
+        # One thread per conversation: the checkpointer keys all memory by
+        # thread_id. Regenerating it each turn wiped the agent's history,
+        # making it re-run the welcome and re-ask for the profile every message.
+        if not self._thread_id:
+            self._thread_id = str(uuid.uuid4())
         self._worker = SSEWorker(
             url=agent_url, message=text,
             extra_payload={"thread_id": self._thread_id, "chat_id": self._chat_id})
@@ -372,14 +410,38 @@ class ChatPage(QWidget):
         self._worker.interrupt.connect(self._on_interrupt)
         self._worker.done.connect(self._on_stream_done)
         self._worker.error.connect(self._on_stream_error)
+        self._track(self._worker)
         self._worker.start()
 
     def _abort_stream(self):
         if self._worker:
-            self._worker.abort()
+            self._worker.abort()          # closes the read; finished->deleteLater cleans up
             self._add_system("Stopped.")
+            self._worker = None
         if self._cap_worker:
             self._cap_worker = None
+        self._set_input_busy(False)       # abort suppresses the done signal, so reset here
+
+    def _track(self, worker):
+        """Keep a strong ref to a worker until Qt's finished signal (fires after
+        run() returns), then drop it and schedule deletion. Call before start()."""
+        self._threads.add(worker)
+        worker.finished.connect(lambda w=worker: self._threads.discard(w))
+        worker.finished.connect(worker.deleteLater)
+
+    def cleanup(self):
+        """Stop every running worker thread and block until each finishes, so Qt
+        never destroys a QThread that is still running (the
+        'QThread: Destroyed while thread is still running' warning / crash on
+        exit). Safe to call multiple times."""
+        self._worker = None
+        self._cap_worker = None
+        for worker in list(self._threads):
+            try:
+                worker.stop()
+            except Exception:
+                pass
+        self._threads.clear()
 
     # ── Helpers ────────────────────────────────────────────────────────────────
     def _set_input_busy(self, busy: bool):

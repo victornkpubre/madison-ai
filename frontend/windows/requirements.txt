@@ -1,0 +1,12 @@
+PyQt5
+opencv-python
+mss
+numpy
+pandas
+openpyxl
+keyboard
+pygetwindow
+rapidfuzz
+requests
+anthropic
+python-dotenv

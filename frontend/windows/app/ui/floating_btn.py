@@ -3,11 +3,12 @@ application/ui/floating_btn.py  (v3 — multi-page)
 ──────────────────────────────────────────
 The floating launcher button.  Expands into a multi-page panel:
 
-  Home      →  quick-launch menu  (228 × 360)
-  Chat      →  OCR Agent chat     (320 × 460)
-  Dashboard →  database tables    (440 × 480)
+  Home      →  quick-launch menu    (228 × 360)
+  Chat      →  Marketing Agent chat (320 × 460)
+  Dashboard →  database tables      (440 × 480)
 
-Collapsed: 56×56 draggable circle.
+Collapsed: 56×56 draggable circle. Draggable in either state — drag from
+any non-interactive area (e.g. the panel header) while expanded.
 """
 from PyQt5.QtWidgets import QWidget, QApplication, QStackedWidget, QVBoxLayout
 from PyQt5.QtCore import Qt, QRect, QPropertyAnimation, QEasingCurve, QSize
@@ -73,7 +74,7 @@ class FloatingBtn(QWidget):
 
         self._home = HomePage()
         self._chat = ChatPage(self.db)
-        self._dash = DashboardPage(self.db)
+        self._dash = DashboardPage()
 
         self._stack.addWidget(self._home)
         self._stack.addWidget(self._chat)
@@ -162,6 +163,24 @@ class FloatingBtn(QWidget):
     def toggle_panel(self):
         self.collapse() if self._open else self.expand()
 
+    def cleanup(self):
+        """Stop child worker threads and release resources before the app quits.
+        Wire this to QApplication.aboutToQuit — closing the window isn't enough
+        because the app uses setQuitOnLastWindowClosed(False) and quits via the
+        tray/menu, which never fires a window closeEvent."""
+        try:
+            self._chat.cleanup()
+        except Exception:
+            pass
+        try:
+            self._dash.cleanup()
+        except Exception:
+            pass
+        try:
+            self.db.close()
+        except Exception:
+            pass
+
     def toggle_visibility(self):
         if self.isVisible():
             self.collapse()
@@ -233,7 +252,7 @@ class FloatingBtn(QWidget):
             self._drag_origin = e.globalPos()
 
     def mouseMoveEvent(self, e):
-        if self._drag_start and e.buttons() == Qt.LeftButton and not self._open:
+        if self._drag_start and e.buttons() == Qt.LeftButton:
             self.move(self.pos() + e.pos() - self._drag_start)
 
     def mouseReleaseEvent(self, e):
@@ -242,7 +261,7 @@ class FloatingBtn(QWidget):
         moved = (e.globalPos() - self._drag_origin).manhattanLength()
         if moved < 5 and not self._open:
             self.expand()
-        elif moved >= 5 and not self._open:
+        elif moved >= 5:
             s = load_settings()
             s["pos"] = [self.x(), self.y()]
             save_settings(s)

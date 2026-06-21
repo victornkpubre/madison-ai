@@ -35,3 +35,12 @@ class CaptureRequestWorker(QThread):
             result = {"records": [], "found": False, "error": str(exc)}
         result["slice"] = slice_index
         self.finished_payload.emit(result)
+
+    def stop(self, wait_ms: int = 5000):
+        """Block until the capture finishes, so the QThread is never destroyed
+        while still running. The capture itself can't be interrupted, so this
+        waits it out (then terminates as a last resort)."""
+        if self.isRunning():
+            if not self.wait(wait_ms):
+                self.terminate()
+                self.wait()

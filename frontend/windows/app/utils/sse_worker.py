@@ -41,6 +41,7 @@ class SSEWorker(QThread):
         self.history       = history or []
         self.extra_payload = extra_payload or {}
         self._abort        = False
+        self._resp         = None    # live response, so stop() can unblock the read
 
     # ── Thread entry point ─────────────────────────────────────────────────────
 
@@ -58,6 +59,7 @@ class SSEWorker(QThread):
                 stream=True,
                 timeout=60,
             ) as resp:
+                self._resp = resp
                 resp.raise_for_status()
                 for raw in resp.iter_lines():
                     if self._abort:
@@ -90,15 +92,23 @@ class SSEWorker(QThread):
                         self.chunk.emit(text)
 
         except requests.exceptions.ConnectionError:
-            self.error.emit("Cannot reach the agent — is your FastAPI server running?")
+            if not self._abort:
+                self.error.emit("Cannot reach the agent — is your FastAPI server running?")
         except requests.exceptions.Timeout:
-            self.error.emit("Request timed out.")
+            if not self._abort:
+                self.error.emit("Request timed out.")
         except requests.exceptions.HTTPError as exc:
-            self.error.emit(f"HTTP {exc.response.status_code}: {exc.response.text[:120]}")
+            if not self._abort:
+                self.error.emit(f"HTTP {exc.response.status_code}: {exc.response.text[:120]}")
         except Exception as exc:
-            self.error.emit(str(exc))
+            # An intentional stop() closes the response, which surfaces here as a
+            # read error — don't report it as a real failure.
+            if not self._abort:
+                self.error.emit(str(exc))
         finally:
-            self.done.emit()
+            self._resp = None
+            if not self._abort:
+                self.done.emit()
 
     # ── Payload parsing ────────────────────────────────────────────────────────
 
@@ -126,4 +136,23 @@ class SSEWorker(QThread):
     # ── Control ────────────────────────────────────────────────────────────────
 
     def abort(self):
+        """Request the stream to stop. Non-blocking — closes the live response
+        so the blocking iter_lines() read returns instead of waiting out the
+        60s timeout."""
         self._abort = True
+        resp = self._resp
+        if resp is not None:
+            try:
+                resp.close()
+            except Exception:
+                pass
+
+    def stop(self, wait_ms: int = 3000):
+        """Abort and block until the thread has actually finished, so the
+        QThread is never destroyed while still running."""
+        self.abort()
+        if self.isRunning():
+            if not self.wait(wait_ms):
+                # Last resort: the read never unblocked. Better than a hang.
+                self.terminate()
+                self.wait()

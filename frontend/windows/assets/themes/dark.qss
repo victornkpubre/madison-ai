@@ -238,6 +238,22 @@ QWidget {
 #StatsBar { background: transparent; }
 #StatsLabel { color: #6C7086; font-size: 12px; background: transparent; }
 
+#TableSelector {
+    background-color: #313244;
+    color: #CDD6F4;
+    border: 1px solid #45475A;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 12px;
+}
+#TableSelector:hover { border-color: #7986CB; }
+#TableSelector QAbstractItemView {
+    background-color: #313244;
+    color: #CDD6F4;
+    selection-background-color: #45475A;
+    border: 1px solid #45475A;
+}
+
 #CaptureTable {
     background: #16162A;
     alternate-background-color: #1E1E35;

@@ -8,3 +8,4 @@ langchain-openai
 psycopg[binary]
 psycopg-pool
 python-dotenv
+sqlalchemy

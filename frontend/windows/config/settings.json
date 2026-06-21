@@ -1,10 +1,10 @@
 {
   "pos": [
-    674,
-    305
+    708,
+    143
   ],
   "theme": "dark",
   "hotkey": "ctrl+shift+space",
-  "agent_url": "http://localhost:8000/assist",
-  "resume_url": "http://localhost:8000/assist/resume"
+  "agent_url": "http://localhost:8000/chat",
+  "resume_url": "http://localhost:8000/resume"
 }

@@ -21,11 +21,10 @@ from PyQt5.QtGui import QPainter, QBrush, QColor, QPen, QFont
 
 # ── Nav items  (icon, label, target_page | None) ──────────────────────────────
 _NAV = [
-    ("🔍", "OCR Agent",  "chat"),
-    ("📊", "Dashboard",  "dashboard"),
-    ("📈", "Analytics",  None),
-    ("🔔", "Alerts",     None),
-    ("🎬", "Clips",      None),
+    ("🔍", "Marketing Agent", "chat"),
+    ("📊", "Database",      "dashboard"),
+    ("📈", "Analytics",     None),
+    ("🔔", "Alerts",        None),
 ]
 
 # ── Tool / service rows ────────────────────────────────────────────────────────
