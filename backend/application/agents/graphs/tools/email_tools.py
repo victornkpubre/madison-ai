@@ -5,16 +5,21 @@ LangChain @tool wrappers around NotificationService's email methods.
 """
 from langchain_core.tools import tool
 
-from backend.composition import notification_service
+from composition import notification_service
 
 
 @tool
 async def connect_email_account(email: str, password: str, display_name: str = "") -> str:
     """
-    Connect an email account for sending. `password` must be an app
-    password generated from the account's security settings, not the
-    account's real password. SMTP/IMAP host and port are auto-detected
-    from the email's domain.
+    Connect an ADDITIONAL email account for sending. The default sending
+    account is configured in the app's .env file (EMAIL_ADDRESS /
+    EMAIL_APP_PASSWORD) and loaded automatically at startup, so you usually
+    do NOT need this tool. Only use it if the creator explicitly wants to add
+    another account. Never ask the creator to type or paste a password into
+    the chat — credentials belong in .env, not in conversation. `password`
+    must be an app password generated from the account's security settings,
+    not the account's real password. SMTP/IMAP host and port are
+    auto-detected from the email's domain.
     """
     result = await notification_service.connect_email_account(email, password, display_name)
     if result["ok"]:

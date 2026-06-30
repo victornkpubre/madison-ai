@@ -6,23 +6,20 @@
 # Analyze the audience — analyze_audience — runs once, processes captured viewer messages into a summary + content gaps.
 # Generate ideas — generate_ideas — produces the final content suggestions, grounded in the profile, history, and audience analysis from the steps above.
 from langchain_core.messages import SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from backend.application.agents.graphs.prompts.idea_prompt import SYSTEM_PROMPT
-from backend.application.agents.graphs.tools.idea_tools import IDEA_TOOLS
-from backend.application.agents.resilience import invoke_llm
-from backend.config import settings
+from application.agents.graphs.prompts.idea_prompt import SYSTEM_PROMPT
+from application.agents.graphs.tools.idea_tools import IDEA_TOOLS
+from application.agents.resilience import invoke_llm
 
 # ── top-level conversational graph ───────────────────────────────────────
-_model = ChatOpenAI(model=settings.openai_model, temperature=0, api_key=settings.openai_api_key)
-model_with_tools = _model.bind_tools(IDEA_TOOLS, parallel_tool_calls=False)
+_idea_agent_bind = lambda m: m.bind(temperature=0).bind_tools(IDEA_TOOLS, parallel_tool_calls=False)
 
 
 async def agent_node(state: MessagesState) -> dict:
     messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-    response = await invoke_llm(model_with_tools, messages)
+    response = await invoke_llm(messages, bind=_idea_agent_bind, use_cache=False)
     return {"messages": [response]}
 
 

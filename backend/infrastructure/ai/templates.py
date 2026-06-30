@@ -20,8 +20,8 @@ otherwise stored in-memory for the life of the server process.
 import re
 from datetime import datetime, timezone
 
-from backend.config import settings
-from backend.domain.repository.template_repository_interface import ITemplateRepository
+from config import settings
+from domain.repository.template_repository_interface import ITemplateRepository
 
 # ── in-memory store ───────────────────────────────────────────────────────────
 # name → {name, channel, subject, body, variables, is_default, created_at}

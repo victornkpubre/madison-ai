@@ -8,7 +8,7 @@ application/services/notification_service.py).
 """
 from langchain_core.tools import tool
 
-from backend.composition import notification_service
+from composition import notification_service
 
 
 @tool

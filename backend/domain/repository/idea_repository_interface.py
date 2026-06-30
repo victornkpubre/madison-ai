@@ -15,17 +15,18 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from backend.domain.entities.idea_entity import ContentHistoryItem, CreatorIdeaProfile
+from domain.entities.creator_entity import CreatorProfile
+from domain.entities.idea_entity import ContentHistoryItem
 
 
 class IIdeaRepository(ABC):
 
-    # ── creator idea profile ──────────────────────────────────────────────
+    # ── creator profile (unified) ──────────────────────────────────────────
     @abstractmethod
     def upsert_profile_field(self, field: str, value: str) -> None: ...
 
     @abstractmethod
-    def load_profile(self) -> CreatorIdeaProfile: ...
+    def load_profile(self) -> CreatorProfile: ...
 
     # ── content history ───────────────────────────────────────────────────
     @abstractmethod
@@ -48,6 +49,9 @@ class IIdeaRepository(ABC):
 
     @abstractmethod
     def load_unanalysed_signals(self, limit: int = 200) -> list[dict]: ...
+
+    @abstractmethod
+    def load_signals_by_session(self, session_id: str, limit: int = 500) -> list[dict]: ...
 
     @abstractmethod
     def update_signal_topic(self, signal: dict, signal_type: str, topic: str) -> None: ...

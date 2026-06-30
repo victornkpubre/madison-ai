@@ -17,7 +17,7 @@ from typing import Optional
 from sqlalchemy import BigInteger, DateTime, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.infrastructure.database.db import Base
+from infrastructure.database.db import Base
 
 
 class TelegramUserModel(Base):

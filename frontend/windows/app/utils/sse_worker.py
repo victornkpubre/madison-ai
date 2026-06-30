@@ -7,8 +7,16 @@ text chunk so the Qt main thread can render it safely.
 In addition to the streaming formats below, it understands the StreamEye
 backend's typed events:
     data: {"type": "token",     "content": "..."}   -> chunk
-    data: {"type": "interrupt", "value":   {...}}    -> interrupt   (NEW)
+    data: {"type": "interrupt", "value":   {...}}    -> interrupt
     data: {"type": "done"}                            -> end of stream
+    data: {"type": "route"|"tool_call"|"node_enter"|
+                    "node_exit"|"llm_start"|"fastapi", ...} -> flow_event (NEW)
+        These are the supervisor/graph trace events emitted by
+        stream_graph() in backend/interface/dependencies.py — they show
+        which agent is handling the turn (route: from_node -> to_node) and
+        which tools it's calling. Previously these were silently dropped
+        (they don't match any of the "Other supported formats" shapes
+        below, so _parse() returned "" for all of them).
 
 Other supported formats:
   1. LangGraph astream_events  data: {"event":"on_chat_model_stream","data":{"chunk":{"content":"..."}}}
@@ -27,7 +35,13 @@ class SSEWorker(QThread):
     chunk     = pyqtSignal(str)    # one text fragment — append to the bubble
     done      = pyqtSignal()       # stream finished cleanly
     error     = pyqtSignal(str)    # error message
-    interrupt = pyqtSignal(dict)   # NEW: backend paused for human approval
+    interrupt = pyqtSignal(dict)   # backend paused for human approval
+    flow_event = pyqtSignal(dict)   # NEW: route / tool_call / node_enter / node_exit /
+                                     # llm_start / fastapi trace events — UI decides what to show
+                                     # (named flow_event, not event — QObject already has a
+                                     # built-in event() method Qt's loop calls internally;
+                                     # a pyqtSignal named "event" shadows it and breaks Qt's
+                                     # own dispatch with "native Qt signal is not callable")
 
     def __init__(self,
                  url:     str,
@@ -80,11 +94,16 @@ class SSEWorker(QThread):
                     except json.JSONDecodeError:
                         evt = None
                     if isinstance(evt, dict):
-                        if evt.get("type") == "interrupt":
+                        etype = evt.get("type")
+                        if etype == "interrupt":
                             self.interrupt.emit(evt.get("value", {}))
                             continue
-                        if evt.get("type") == "done":
+                        if etype == "done":
                             break
+                        if etype in ("route", "tool_call", "node_enter",
+                                     "node_exit", "llm_start", "fastapi"):
+                            self.flow_event.emit(evt)
+                            continue
 
                     # ── fall back to the generic chunk parser ────────────────
                     text = self._parse(data_str)

@@ -18,6 +18,7 @@ class CaptureSession:
     slices_done: int = 0
     capture_tool_id: Optional[str] = None
     stopped_reason: Optional[str] = None
+    platform: str = "tiktok"
     id: Optional[str] = None
     created_at: Optional[datetime] = None
 

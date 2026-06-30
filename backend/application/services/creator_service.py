@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from backend.domain.entities.creator_entity import CreatorProfile, CreatorKnowledgeEntry
-from backend.domain.repository.creator_repository_interface import ICreatorRepository
+from domain.entities.creator_entity import CreatorProfile, CreatorKnowledgeEntry
+from domain.repository.creator_repository_interface import ICreatorRepository
 
 
 class CreatorService:
@@ -19,6 +19,11 @@ class CreatorService:
         await self._repo.save_profile(profile)
         return profile
 
+    async def reset_profile(self) -> None:
+        """Clear identity + content-strategy fields so onboarding starts over.
+        Knowledge base and captured records are untouched."""
+        await self._repo.clear_profile()
+
     # ── knowledge base ─────────────────────────────────────────────────────
     def list_knowledge(self, limit: int = 60) -> list[CreatorKnowledgeEntry]:
         return self._repo.list_knowledge(limit)
@@ -28,3 +33,8 @@ class CreatorService:
 
     async def delete_knowledge(self, topic: str) -> None:
         await self._repo.delete_knowledge(topic)
+
+    async def clear_knowledge(self) -> None:
+        """Wipe the entire knowledge base — every entry — unlike delete_knowledge
+        which removes a single topic."""
+        await self._repo.clear_knowledge()

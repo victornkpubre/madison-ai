@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from backend.infrastructure.repositories.capture_repository import capture_repository
-from backend.interface.schemas.capture_schema import CaptureSessionResponse
+from infrastructure.repositories.capture_repository import capture_repository
+from interface.schemas.capture_schema import CaptureSessionResponse
 
 router = APIRouter()
 

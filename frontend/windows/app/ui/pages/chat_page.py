@@ -14,6 +14,7 @@ config/settings.json:
     "resume_url": "http://localhost:8000/resume" }
 """
 import uuid
+from urllib.parse import urlsplit
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
@@ -26,6 +27,7 @@ from PyQt5.QtGui import (
 
 from app.core.database import CaptureDatabase
 from app.core.settings import load_settings
+from app.utils.db_api_worker import DbApiWorker
 
 
 # ── Colour tokens (match dark.qss palette) ───────────────────────────────────
@@ -74,24 +76,84 @@ class ChatPage(QWidget):
         self._awaiting_answer = False     # next Send answers an ask_creator question
         self._stream_open     = False     # lazy stream bubble open?
 
+        # ── continuous inspiration-hunt state ──
+        # _hunt_active: the graph is currently driving a continuous hunt (set on
+        # each continuous record_screen interrupt). _hunt_stop_requested: the
+        # creator pressed Stop — honoured at the next safe point (when a capture
+        # finishes, or when the next hunt interrupt arrives) by resuming the
+        # paused graph with {"stop": True} so the backend ends the hunt cleanly
+        # and presents what it has, instead of a hard abort that drops the loop.
+        self._hunt_active         = False
+        self._hunt_stop_requested = False
+
         self._build()
         self._add_onboarding_message()
 
     def _add_onboarding_message(self):
         self.add_agent_message(
             "Hi, I'm your Marketing Agent 👋\n\n"
-            "I'm here to grow your TikTok LIVE channel — turning your stream "
-            "into leads, your chat into audience insight, and that insight "
-            "into a content plan that actually fits who's watching. Here's how:\n\n"
-            "• Capture leads — pull usernames, Telegram handles, and emails "
-            "straight out of your live chat while you stream\n"
-            "• Know your audience — turn what's said in chat into real "
-            "intelligence: trending topics, sentiment, and the questions "
-            "you haven't answered yet\n"
-            "• Plan content that lands — once I know your niche and audience, "
-            "I generate ideas grounded in real data, not generic advice\n"
-            "• Follow up automatically — draft and send personalised "
-            "Telegram or email campaigns using templates in your own voice\n\n"
+            "I'm here to grow your presence. Here's what I can do:\n"
+            "\n"
+            "Content & ideas\n"
+            "• Build content plans and ideas from your profile, content history, and audience analysis\n"
+            "• Read another creator's stream or post for relevance and ideas — paste in what you see, "
+            "or just point your screen at it\n"
+            "\n"
+            "Live capture (your own stream — TikTok, Kick, Whatnot, or Twitch)\n"
+            "• Collect viewer contacts (username, Telegram, age, location)\n"
+            "• Turn a session into a topic/sentiment report and surface knowledge gaps\n"
+            "\n"
+            "Leads & outreach\n"
+            "• Add a lead manually — a referral, a DM — and I'll draft a personalized follow-up\n"
+            "• Send via email or Telegram, broadcast to a list, or save reusable templates\n"
+            "• You always approve a message before it sends\n"
+            "\n"
+            "Knowledge base\n"
+            "• Save answers to common viewer questions so I can use them in replies and content"
+        )
+        # The CTA below depends on whether the creator profile is actually
+        # empty, so it's appended as a follow-up bubble once we know — rather
+        # than always showing the new-creator pitch to someone who already
+        # set up their profile weeks ago.
+        self._fetch_profile_for_greeting()
+
+    def _base_url(self) -> str:
+        """Derive the backend root (scheme://host:port) from agent_url."""
+        agent_url = load_settings().get("agent_url", "")
+        parts = urlsplit(agent_url)
+        if parts.scheme and parts.netloc:
+            return f"{parts.scheme}://{parts.netloc}"
+        return ""
+
+    def _fetch_profile_for_greeting(self):
+        base = self._base_url()
+        if not base:
+            self._add_new_creator_cta()   # no backend configured — default to the safe, generic CTA
+            return
+        worker = DbApiWorker(f"{base}/creator/profile")
+        worker.loaded.connect(self._on_profile_status_loaded)
+        worker.failed.connect(self._on_profile_status_failed)
+        self._track(worker)
+        worker.start()
+
+    def _on_profile_status_loaded(self, profile: dict):
+        name = (profile or {}).get("name")
+        if name:
+            self.add_agent_message(
+                f"Welcome back, {name}! Want me to check your knowledge "
+                f"gaps, draft a follow-up, or work on something else?"
+            )
+        else:
+            self._add_new_creator_cta()
+
+    def _on_profile_status_failed(self, _msg: str):
+        # Can't tell whether the profile is set — default to the same CTA a
+        # brand-new creator would see (matches check_onboarding_status()'s
+        # own fallback: assume nothing is set up yet rather than guess wrong).
+        self._add_new_creator_cta()
+
+    def _add_new_creator_cta(self):
+        self.add_agent_message(
             "Tell me a bit about yourself and your content to get started — "
             "or just say hi, and I'll figure out the best next step for your "
             "growth, whether that's setting you up or putting data you "
@@ -173,7 +235,7 @@ class ChatPage(QWidget):
         self._stop_btn.setFixedWidth(30); self._stop_btn.setFixedHeight(32)
         self._stop_btn.setCursor(Qt.PointingHandCursor)
         self._stop_btn.setToolTip("Stop")
-        self._stop_btn.clicked.connect(self._abort_stream)
+        self._stop_btn.clicked.connect(self._on_stop_clicked)
         self._stop_btn.hide()
         self._send_btn = QPushButton("Send")
         self._send_btn.setObjectName("SendBtn")
@@ -185,6 +247,31 @@ class ChatPage(QWidget):
         return w
 
     # ── Message rendering ──────────────────────────────────────────────────────
+    # Friendly labels for the top-level graph nodes, used when rendering
+    # 'route' trace events (see _on_flow_event below).
+    _NODE_LABELS = {
+        "supervisor":   "Supervisor",
+        "assist_agent": "Marketing Agent",
+        "idea_agent":   "Idea Generator",
+        "reply_agent":  "Viewer Reply Agent",
+    }
+
+    def _on_flow_event(self, evt: dict):
+        """Render the graph-trace events the backend already streams (route,
+        tool_call) as small inline status lines — previously these were
+        decoded by SSEWorker but had no signal to travel on, so the
+        supervisor -> sub-agent handoffs and tool activity were invisible.
+        node_enter / node_exit / llm_start / fastapi are still available on
+        the same `event` signal for a future debug panel; not rendered here
+        to avoid cluttering the chat with internal node bookkeeping."""
+        etype = evt.get("type")
+        if etype == "route":
+            frm = self._NODE_LABELS.get(evt.get("from_node", ""), evt.get("from_node", "?"))
+            to  = self._NODE_LABELS.get(evt.get("to_node", ""), evt.get("to_node", "?"))
+            self._add_system(f"↳ {frm} → {to}")
+        elif etype == "tool_call":
+            self._add_system(f"🔧 {evt.get('name', 'tool')}")
+
     def _add_system(self, text: str):
         self._chat.append(
             f'<p style="text-align:center;color:#6C7086;font-size:11px;'
@@ -239,6 +326,9 @@ class ChatPage(QWidget):
             self._stream_open = True
 
     def _on_chunk(self, text: str):
+        # The hunt loop emits no tokens; the first agent text after a hunt is its
+        # results summary, so the capture loop is over — Stop now aborts normally.
+        self._hunt_active = False
         self._ensure_stream()
         cursor = self._chat.textCursor()
         cursor.movePosition(QTextCursor.End)
@@ -265,8 +355,25 @@ class ChatPage(QWidget):
         action = value.get("action")
 
         if action == "record_screen":
-            self._add_system(
-                f"● Capturing records ({value.get('have', 0)}/{value.get('target', '?')})…")
+            mode = value.get("mode", "records")
+            continuous = bool(value.get("continuous"))
+
+            if continuous:
+                self._hunt_active = True
+                # Creator already asked to stop while the backend was between
+                # shots — the graph is now paused at this interrupt, so answer
+                # it with stop instead of grabbing another screenshot.
+                if self._hunt_stop_requested:
+                    self._finish_hunt_stop()
+                    return
+                found, target = value.get("relevant_found", 0), value.get("target", "?")
+                self._add_system(f"● Scanning posts ({found}/{target} relevant)…")
+            elif mode == "post_screenshot":
+                self._add_system("● Capturing screenshot…")
+            else:
+                label = "chat messages" if mode == "messages" else "records"
+                self._add_system(
+                    f"● Capturing {label} ({value.get('have', 0)}/{value.get('target', '?')})…")
             from app.utils.capture_request_worker import CaptureRequestWorker
             self._cap_worker = CaptureRequestWorker(value)
             self._cap_worker.finished_payload.connect(self._on_capture_done)
@@ -288,9 +395,17 @@ class ChatPage(QWidget):
 
     def _on_capture_done(self, payload: dict):
         self._cap_worker = None
-        recs = payload.get("records", payload.get("messages", []))
+        # Creator pressed Stop while this slice was capturing (or during its
+        # pre-capture wait) — discard the frame and end the hunt cleanly.
+        if self._hunt_stop_requested or payload.get("cancelled"):
+            self._finish_hunt_stop()
+            return
+        if "messages" in payload:
+            recs, label = payload.get("messages", []), "message"
+        else:
+            recs, label = payload.get("records", []), "record"
         if recs:
-            self._add_system(f"  +{len(recs)} record(s)")
+            self._add_system(f"  +{len(recs)} {label}(s)")
         self._resume_value(payload)
 
     # ── Resume helpers ───────────────────────────────────────────────────────────
@@ -307,6 +422,7 @@ class ChatPage(QWidget):
         self._worker.interrupt.connect(self._on_interrupt)
         self._worker.done.connect(self._on_stream_done)
         self._worker.error.connect(self._on_stream_error)
+        self._worker.flow_event.connect(self._on_flow_event)
         self._track(self._worker)
         self._worker.start()
 
@@ -332,6 +448,7 @@ class ChatPage(QWidget):
             extra_payload={"thread_id": self._thread_id, "action": action, "text": ""})
         self._worker.done.connect(self._on_resume_done)
         self._worker.error.connect(self._on_stream_error)
+        self._worker.flow_event.connect(self._on_flow_event)
         self._track(self._worker)
         self._worker.start()
 
@@ -378,11 +495,14 @@ class ChatPage(QWidget):
             self._resume_action = "edit"
             self._worker.done.connect(self._on_resume_done)
             self._worker.error.connect(self._on_stream_error)
+            self._worker.flow_event.connect(self._on_flow_event)
             self._worker.finished.connect(self._worker.deleteLater)
             self._worker.start()
             return
 
         # Normal new turn -> the assistant agent.
+        self._hunt_active = False
+        self._hunt_stop_requested = False
         self.add_user_message(text)
         self.message_sent.emit(text)
         self._set_input_busy(True); self._stream_open = False
@@ -410,8 +530,39 @@ class ChatPage(QWidget):
         self._worker.interrupt.connect(self._on_interrupt)
         self._worker.done.connect(self._on_stream_done)
         self._worker.error.connect(self._on_stream_error)
+        self._worker.flow_event.connect(self._on_flow_event)
         self._track(self._worker)
         self._worker.start()
+
+    def _on_stop_clicked(self):
+        """Stop button. During a continuous inspiration hunt, stop it gracefully
+        (let the backend finish and present what it collected). Any other busy
+        state — a normal turn, a records/stream capture — gets the hard abort."""
+        if self._hunt_active:
+            self._request_hunt_stop()
+        else:
+            self._abort_stream()
+
+    def _request_hunt_stop(self):
+        """Creator asked to end the hunt. If a slice is capturing right now, the
+        graph is paused at the hunt interrupt — cancel the grab and the
+        capture-done handler resumes with stop. If nothing is capturing, the
+        backend is mid-analysis and will emit one more interrupt; the flag makes
+        _on_interrupt answer that one with stop instead of another screenshot."""
+        if self._hunt_stop_requested:
+            return
+        self._hunt_stop_requested = True
+        self._add_system("● Stopping the hunt — wrapping up what we found…")
+        if self._cap_worker is not None:
+            self._cap_worker.cancel()   # ends any slice_delay wait early
+
+    def _finish_hunt_stop(self):
+        """Resume the paused hunt with stop=True so the backend ends it cleanly
+        and presents the collected results."""
+        self._cap_worker = None
+        self._hunt_stop_requested = False
+        self._hunt_active = False
+        self._resume_value({"stop": True})
 
     def _abort_stream(self):
         if self._worker:
@@ -420,6 +571,8 @@ class ChatPage(QWidget):
             self._worker = None
         if self._cap_worker:
             self._cap_worker = None
+        self._hunt_active = False
+        self._hunt_stop_requested = False
         self._set_input_busy(False)       # abort suppresses the done signal, so reset here
 
     def _track(self, worker):

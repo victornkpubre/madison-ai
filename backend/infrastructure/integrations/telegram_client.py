@@ -29,10 +29,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql import func
 
-from backend.config import settings
-from backend.domain.repository.telegram_repository_interface import ITelegramRepository
-from backend.infrastructure.database.db import get_sync_session
-from backend.infrastructure.database.notification_model import TelegramUserModel
+from config import settings
+from domain.repository.telegram_repository_interface import ITelegramRepository
+from infrastructure.database.db import get_sync_session
+from infrastructure.database.notification_model import TelegramUserModel
 
 TELEGRAM_TOKEN = settings.telegram_bot_token
 
@@ -109,7 +109,7 @@ def get_chat_id(username: str) -> int | None:
 async def list_telegram_users(limit: int = 50) -> list[dict]:
     """Used by the GET /debug/telegram-users endpoint."""
     if settings.database_url:
-        from backend.infrastructure.database.db import get_async_session
+        from infrastructure.database.db import get_async_session
         async with get_async_session() as s:
             rows = (await s.execute(
                 select(TelegramUserModel)

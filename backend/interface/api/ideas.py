@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from backend.composition import idea_service
-from backend.interface.schemas.idea_schema import SignalIngestRequest
+from composition import idea_service
+from interface.schemas.idea_schema import SignalIngestRequest
 
 router = APIRouter()
 
@@ -36,7 +36,7 @@ async def ingest_signals(req: SignalIngestRequest):
 @router.get("/ideas/profile")
 async def get_idea_profile():
     """Return the current creator idea profile."""
-    return idea_service.load_profile().as_dict()
+    return idea_service.load_profile().strategy_dict()
 
 
 @router.get("/ideas/analytics")

@@ -44,10 +44,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql import func
 
-from backend.config import settings
-from backend.domain.repository.email_repository_interface import IEmailRepository
-from backend.infrastructure.database.db import get_sync_session
-from backend.infrastructure.database.notification_model import EmailAccountModel
+from config import settings
+from domain.repository.email_repository_interface import IEmailRepository
+from infrastructure.database.db import get_sync_session
+from infrastructure.database.notification_model import EmailAccountModel
 
 # ── in-memory store (fallback when DATABASE_URL is not set) ───────────────────
 _smtp_store: dict[str, dict] = {}

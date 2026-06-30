@@ -1,0 +1,27 @@
+# baskend
+fastapi
+uvicorn
+httpx
+langgraph
+langgraph-checkpoint-postgres
+langchain-core
+langchain-openai
+langchain-anthropic
+psycopg[binary]
+psycopg-pool
+python-dotenv
+sqlalchemy
+
+# windows
+PyQt5
+opencv-python
+mss
+numpy
+pandas
+openpyxl
+keyboard
+pygetwindow
+rapidfuzz
+requests
+anthropic
+python-dotenv

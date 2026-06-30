@@ -32,11 +32,10 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 from langchain_core.messages import SystemMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 
-from backend.config import settings
-from backend.composition import creator_service, idea_service
-from backend.application.agents.graphs.tools.telegram_tools import send_telegram_message
+from application.agents.resilience import invoke_llm
+from composition import creator_service, idea_service
+from application.agents.graphs.tools.telegram_tools import send_telegram_message
 
 
 # ── dynamic system prompt ─────────────────────────────────────────────────────
@@ -159,10 +158,8 @@ def add_knowledge(topic: str, content: str) -> str:
 
 # ── model ─────────────────────────────────────────────────────────────────────
 
-model = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key,
-                   temperature=0.4)
-model_with_tools = model.bind_tools([retrieve_knowledge, add_knowledge],
-                                    parallel_tool_calls=False)
+_reply_bind = lambda m: m.bind(temperature=0.4).bind_tools(
+    [retrieve_knowledge, add_knowledge], parallel_tool_calls=False)
 
 
 # ── state ─────────────────────────────────────────────────────────────────────
@@ -175,10 +172,10 @@ class State(MessagesState):
 
 # ── nodes ─────────────────────────────────────────────────────────────────────
 
-def agent_node(state: State) -> dict:
+async def agent_node(state: State) -> dict:
     """LLM reasoning step. Retrieves knowledge then drafts a reply."""
     messages = [SystemMessage(build_system_prompt())] + state["messages"]
-    response = model_with_tools.invoke(messages)
+    response = await invoke_llm(messages, bind=_reply_bind, use_cache=False)
     return {"messages": [response]}
 
 

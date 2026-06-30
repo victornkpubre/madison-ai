@@ -31,12 +31,12 @@ from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage
 from fastapi.responses import StreamingResponse
 
-from backend.config import settings
-from backend.composition import idea_service
-from backend.infrastructure.ai import templates as templates_store
-from backend.infrastructure.integrations import email_client, telegram_client
-from backend.interface.dependencies import resume_command, stream_graph
-from backend.interface.schemas.assistant_schema import (
+from config import settings
+from composition import idea_service
+from infrastructure.ai import templates as templates_store
+from infrastructure.integrations import email_client, telegram_client
+from interface.dependencies import resume_command, stream_graph
+from interface.schemas.assistant_schema import (
     ChatRequest, ResumeRequest, SmtpConnectRequest, TemplateRequest,
 )
 
@@ -44,6 +44,25 @@ router = APIRouter()
 
 _MAIN_NODES = frozenset({"supervisor",
                           "assist_agent", "idea_agent", "reply_agent"})
+
+# Which node's chat-model calls are the actual user-facing reply (and so
+# should stream token-by-token). NOT "assist_agent"/"idea_agent"/"reply_agent"
+# — those are only the OUTER supervisor's registration names for three
+# separately-compiled subgraphs (assist_graph / idea_graph / reply_graph).
+# Each of those subgraphs names its own internal ReAct-loop node "agent"
+# (see assistant_graph.py / ideation_graph.py / reply_graph.py) — and
+# astream_events() reports metadata for whichever node is CURRENTLY
+# executing, which for a nested subgraph is the inner node's own name, not
+# the outer one (verified empirically: a separately-compiled subgraph
+# invoked via plain .ainvoke() still reports its own node names). So
+# filtering on "assist_agent" etc. matched nothing and silently dropped
+# every real reply — routing/tool-call events still showed (those ARE
+# keyed on the outer name), making it look like the agent went silent
+# after doing real work, when actually every token of its answer was being
+# thrown away. "agent" is unique to these three top-level loops — no
+# internal helper graph (audience_analysis_graph, idea_generation_graph)
+# uses that name for any of its own nodes.
+_STREAMING_NODES = frozenset({"agent"})
 
 
 # ── main chat endpoints ────────────────────────────────────────────────────────
@@ -58,7 +77,11 @@ async def chat(req: ChatRequest, request: Request):
     based on the message content and whether chat_id is present.
     """
     main_graph = request.app.state.main_graph
-    config = {"configurable": {"thread_id": req.thread_id}}
+    # recursion_limit defaults to 25 — too low for a turn that legitimately
+    # chains several tool calls (e.g. saving 8 FAQ answers = 16+ supersteps).
+    # Raised so normal multi-tool turns don't trip it; runaway loops are still
+    # bounded and now surface as a graceful message (see stream_graph).
+    config = {"configurable": {"thread_id": req.thread_id}, "recursion_limit": 60}
     graph_input = {
         "messages": [HumanMessage(req.message)],
         "chat_id":  req.chat_id,
@@ -70,7 +93,7 @@ async def chat(req: ChatRequest, request: Request):
         "input":     f"HumanMessage({req.message[:50]!r})",
     }
     return StreamingResponse(
-        stream_graph(main_graph, graph_input, config, ep, _MAIN_NODES),
+        stream_graph(main_graph, graph_input, config, ep, _MAIN_NODES, _STREAMING_NODES),
         media_type="text/event-stream")
 
 
@@ -83,7 +106,7 @@ async def resume(req: ResumeRequest, request: Request):
     and checkpoint identify exactly which sub-agent was paused.
     """
     main_graph = request.app.state.main_graph
-    config = {"configurable": {"thread_id": req.thread_id}}
+    config = {"configurable": {"thread_id": req.thread_id}, "recursion_limit": 60}
     val    = req.value or {}
     if "records" in val:
         inp = (f"Command(resume={{records: {len(val['records'])}, "
@@ -99,7 +122,7 @@ async def resume(req: ResumeRequest, request: Request):
         "input":      inp,
     }
     return StreamingResponse(
-        stream_graph(main_graph, resume_command(req), config, ep, _MAIN_NODES),
+        stream_graph(main_graph, resume_command(req), config, ep, _MAIN_NODES, _STREAMING_NODES),
         media_type="text/event-stream")
 
 

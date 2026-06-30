@@ -1,3 +1,4 @@
+# windows
 PyQt5
 opencv-python
 mss

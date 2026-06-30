@@ -21,31 +21,25 @@ context for the LLM.
 """
 from __future__ import annotations
 
-from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
-
-from backend.application.agents.resilience import invoke_llm
-from backend.application.services.creator_service import CreatorService
-from backend.application.services.idea_service import IdeaService
-from backend.application.services.notification_schemas import DraftedTemplate
-from backend.config import settings
-from backend.domain.repository.email_repository_interface import IEmailRepository
-from backend.domain.repository.telegram_repository_interface import ITelegramRepository
-from backend.domain.repository.template_repository_interface import ITemplateRepository
+from application.agents.resilience import invoke_llm
+from application.services.creator_service import CreatorService
+from application.services.idea_service import IdeaService
+from application.services.notification_schemas import DraftedTemplate
+from domain.repository.email_repository_interface import IEmailRepository
+from domain.repository.telegram_repository_interface import ITelegramRepository
+from domain.repository.template_repository_interface import ITemplateRepository
 
 
 class NotificationService:
 
     def __init__(self, telegram_repo: ITelegramRepository, email_repo: IEmailRepository,
                  template_repo: ITemplateRepository, creator_service: CreatorService,
-                 idea_service: IdeaService, llm: BaseChatModel | None = None):
+                 idea_service: IdeaService):
         self._telegram = telegram_repo
         self._email = email_repo
         self._templates = template_repo
         self._creator = creator_service
         self._idea = idea_service
-        self._llm = llm or ChatOpenAI(model=settings.openai_model, temperature=0.4,
-                                      api_key=settings.openai_api_key)
 
     # ── Telegram ─────────────────────────────────────────────────────────────
     async def send_to_username(self, username: str, text: str) -> dict:
@@ -171,14 +165,14 @@ class NotificationService:
         create_email_template / create_telegram_template separately once
         the creator approves (or edits) the wording."""
         creator_profile = (await self._creator.get_profile()).as_dict()
-        idea_profile = self._idea.load_profile().as_dict()
+        idea_profile = self._idea.load_profile().strategy_dict()
         latest_analysis = self._idea.load_latest_audience_analysis()
         audience_summary = latest_analysis["summary"] if latest_analysis else \
             "No audience analysis recorded yet."
         top_topics = self._idea.load_topic_analytics(5)
         topics_text = ", ".join(t["topic"] for t in top_topics) or "none recorded yet"
 
-        drafter = self._llm.with_structured_output(DraftedTemplate)
+        drafter_bind = lambda m: m.bind(temperature=0.4).with_structured_output(DraftedTemplate)
         prompt = (
             f"Draft a {channel} message template for this creator.\n\n"
             f"Creator name: {creator_profile.get('name', 'the creator')}\n"
@@ -199,5 +193,8 @@ class NotificationService:
               "placeholders for personalization — do not hardcode the creator's own name "
               "or bio into the body text."
         )
-        result = await invoke_llm(drafter, prompt)
+        # use_cache=False: drafting is meant to vary (temperature=0.4) — a creator
+        # asking again with the same purpose should get a fresh draft, not a
+        # stale cached one from an earlier identical request.
+        result = await invoke_llm(prompt, bind=drafter_bind, use_cache=False)
         return {"channel": channel, "subject": result.subject, "body": result.body}

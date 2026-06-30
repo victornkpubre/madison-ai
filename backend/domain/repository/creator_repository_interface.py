@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from backend.domain.entities.creator_entity import CreatorKnowledgeEntry, CreatorProfile
+from domain.entities.creator_entity import CreatorKnowledgeEntry, CreatorProfile
 
 
 class ICreatorRepository(ABC):
@@ -24,8 +24,26 @@ class ICreatorRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_profile_sync(self) -> CreatorProfile:
+        """Synchronous read of the unified profile, for sync callers."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def save_profile(self, profile: CreatorProfile) -> None:
-        """Persist the creator profile (single-row upsert)."""
+        """Persist the creator profile's identity fields (single-row upsert)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def upsert_profile_field(self, field: str, value: str) -> None:
+        """Write a single profile field (identity or strategy) to the unified row."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def clear_profile(self) -> None:
+        """Reset every profile field (identity AND content-strategy) back to
+        empty, so onboarding starts over from scratch. Leaves the knowledge
+        base, captured records, and audience analysis untouched — those are
+        separate stores and this is a profile reset, not a full wipe."""
         raise NotImplementedError
 
     # ── knowledge base ─────────────────────────────────────────────────────
@@ -42,4 +60,10 @@ class ICreatorRepository(ABC):
     @abstractmethod
     async def delete_knowledge(self, topic: str) -> None:
         """Remove a knowledge entry by topic."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def clear_knowledge(self) -> None:
+        """Remove ALL knowledge entries — the full-wipe counterpart to
+        delete_knowledge (which removes a single topic)."""
         raise NotImplementedError

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from backend.composition import creator_service
-from backend.interface.schemas.creator_schema import (
+from composition import creator_service
+from interface.schemas.creator_schema import (
     BulkKnowledgeRequest, CreatorProfileRequest, KnowledgeEntry,
 )
 

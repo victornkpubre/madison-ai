@@ -20,7 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from backend.config import settings
+from config import settings
 
 
 def _sa_url(raw: Optional[str]) -> Optional[str]:
@@ -92,17 +92,27 @@ async def create_all_tables() -> None:
 
     # Ensure every ORM model module has been imported so its table is
     # registered on Base.metadata before we create_all.
-    from backend.infrastructure.database import (  # noqa: F401
-        capture_model, creator_model, idea_model, notification_model,
+    from infrastructure.database import (  # noqa: F401
+        capture_model, creator_model, idea_model, lead_model, notification_model,
     )
+    # Single source of truth for the content-strategy column names that were
+    # merged into creator_profile from the former creator_idea_profile table
+    # (see creator_model.py / creator_entity.py) — generated here instead of
+    # hard-coded so a future field added to STRATEGY_FIELDS can't silently
+    # skip this migration the way niche/sub_niche/etc. did.
+    from domain.entities.creator_entity import STRATEGY_FIELDS
 
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        for stmt in [
+        stmts = [
             "ALTER TABLE telegram_users   ADD COLUMN IF NOT EXISTS last_name   VARCHAR(255)",
             "ALTER TABLE email_accounts   ADD COLUMN IF NOT EXISTS smtp_host   VARCHAR(255)",
             "ALTER TABLE email_accounts   ADD COLUMN IF NOT EXISTS smtp_port   INTEGER",
             "ALTER TABLE email_accounts   ADD COLUMN IF NOT EXISTS imap_host   VARCHAR(255)",
             "ALTER TABLE email_accounts   ADD COLUMN IF NOT EXISTS imap_port   INTEGER",
-        ]:
+        ] + [
+            f"ALTER TABLE creator_profile  ADD COLUMN IF NOT EXISTS {col} TEXT"
+            for col in STRATEGY_FIELDS
+        ]
+        for stmt in stmts:
             await conn.execute(text(stmt))

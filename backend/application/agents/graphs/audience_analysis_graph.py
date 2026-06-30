@@ -1,9 +1,9 @@
-from typing import TypedDict
+from typing import Optional, TypedDict
 
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 
-from backend.composition import idea_service
+from composition import idea_service
 
 # ── subgraph 2: parallel extraction + self-correcting synthesis ─────────
 AUDIENCE_SCORE_THRESHOLD = 0.7
@@ -20,10 +20,11 @@ class AudienceState(TypedDict):
     retry_count: int
     max_retries: int
     final_summary: str
+    session_id: Optional[str]
 
 
 async def fetch_signals_node(state: AudienceState) -> dict:
-    signals = await idea_service.fetch_audience_signals()
+    signals = await idea_service.fetch_audience_signals(session_id=state.get("session_id"))
     return {"signals": signals}
 
 
@@ -103,16 +104,19 @@ def build_audience_analysis_graph():
 audience_analysis_graph = build_audience_analysis_graph()
 
 
-def _format_audience_summary(summary: str, gaps: list[str]) -> str:
+def _format_audience_summary(summary: str, gaps: list[str], signal_count: int = 0) -> str:
     gaps_text = "\n".join(f"  - {g}" for g in gaps) or "  (none identified)"
-    return f"{summary}\n\nContent/knowledge gaps:\n{gaps_text}"
+    count_line = f"Based on {signal_count} audience message(s).\n\n" if signal_count else ""
+    return f"{count_line}{summary}\n\nContent/knowledge gaps:\n{gaps_text}"
 
 
-async def analyze_audience(max_retries: int = 2) -> str:
+async def analyze_audience(max_retries: int = 2, session_id: str | None = None) -> str:
     """Entry point called by idea_tools.py. Builds a fresh AudienceState, runs
     audience_analysis_graph to completion, and persists the result so a later
     generate_ideas() call can read it back. `max_retries` caps how many
-    synthesize/evaluate cycles run before returning the best effort."""
+    synthesize/evaluate cycles run before returning the best effort.
+    session_id: scope the analysis to one capture session (e.g. one TikTok
+    LIVE stream's captured chat) instead of the general signal pool."""
     initial_state = {
         "signals": [],
         "topics": [],
@@ -124,7 +128,9 @@ async def analyze_audience(max_retries: int = 2) -> str:
         "retry_count": 0,
         "max_retries": max_retries,
         "final_summary": "",
+        "session_id": session_id,
     }
     result = await audience_analysis_graph.ainvoke(initial_state)
     idea_service.save_audience_analysis(summary=result["final_summary"], gaps=result["gaps"])
-    return _format_audience_summary(result["final_summary"], result["gaps"])
+    return _format_audience_summary(result["final_summary"], result["gaps"],
+                                    signal_count=len(result.get("signals", [])))

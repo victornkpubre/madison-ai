@@ -3,7 +3,7 @@ from typing import TypedDict
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 
-from backend.composition import idea_service
+from composition import idea_service
 
 # ── subgraph 1: self-correcting idea generation ─────────────────────────
 IDEA_SCORE_THRESHOLD = 0.7
@@ -78,7 +78,7 @@ async def generate_ideas(max_retries: int = 2) -> str:
     from the stored profile, content history, and the most recent audience
     analysis, then runs idea_generation_graph to completion. `max_retries` caps
     how many generate/evaluate cycles run before returning the best effort."""
-    profile = idea_service.load_profile().as_dict()
+    profile = idea_service.load_profile().strategy_dict()
     content_history = [
         {"title": item.title, "content_type": item.content_type, "topic": item.topic}
         for item in idea_service.load_content_references(limit=30)

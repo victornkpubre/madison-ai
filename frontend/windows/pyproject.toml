@@ -1,0 +1,21 @@
+[project]
+name = "windows"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "PyQt5==5.15.11",
+    "PyQt5-Qt5==5.15.2",
+    "opencv-python",
+    "mss",
+    "numpy",
+    "pandas",
+    "openpyxl",
+    "keyboard",
+    "pygetwindow",
+    "rapidfuzz",
+    "requests",
+    "anthropic",
+    "python-dotenv",
+]

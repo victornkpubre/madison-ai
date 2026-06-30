@@ -15,10 +15,10 @@ import json
 
 from sqlalchemy import select
 
-from backend.config import settings
-from backend.domain.entities.capture_entity import CaptureSession
-from backend.infrastructure.database.capture_model import CaptureSessionModel
-from backend.infrastructure.database.db import get_sync_session
+from config import settings
+from domain.entities.capture_entity import CaptureSession
+from infrastructure.database.capture_model import CaptureSessionModel
+from infrastructure.database.db import get_sync_session
 
 
 class CaptureRepository:

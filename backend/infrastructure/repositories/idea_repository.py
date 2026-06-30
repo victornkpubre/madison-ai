@@ -17,62 +17,40 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql import func
 
-from backend.config import settings
-from backend.domain.repository.idea_repository_interface import IIdeaRepository
-from backend.domain.entities.idea_entity import (
-    AudienceSignal, ContentHistoryItem, CreatorIdeaProfile, TopicAnalytic,
+from config import settings
+from domain.repository.idea_repository_interface import IIdeaRepository
+from domain.entities.creator_entity import CreatorProfile, STRATEGY_FIELDS
+from domain.entities.idea_entity import (
+    AudienceSignal, ContentHistoryItem, TopicAnalytic,
 )
-from backend.infrastructure.database.db import get_async_session, get_sync_session
-from backend.infrastructure.database.idea_model import (
+from infrastructure.database.db import get_async_session, get_sync_session
+from infrastructure.database.idea_model import (
     AudienceAnalysisModel, AudienceSignalModel, ContentHistoryModel,
-    CreatorIdeaProfileModel, TopicAnalyticModel,
+    TopicAnalyticModel,
 )
+from infrastructure.repositories.creator_repository import creator_repository
 
 
 class IdeaRepository(IIdeaRepository):
 
     def __init__(self):
-        self._profile_mem: dict = {}
         self._content_history_mem: list[dict] = []
         self._signals_mem: list[dict] = []
         self._topic_analytics_mem: dict[str, dict] = {}
         self._audience_analysis_mem: dict | None = None
 
-    # ── creator idea profile ──────────────────────────────────────────────
+    # ── creator profile (unified — backed by creator_repository) ───────────
+    # The content-strategy fields live on the single creator_profile row, so
+    # these methods delegate to creator_repository. There is no separate idea
+    # profile entity or table any more.
 
     def upsert_profile_field(self, field: str, value: str) -> None:
-        allowed = set(CreatorIdeaProfile().as_dict().keys())
-        if field not in allowed:
-            raise ValueError(f"Unknown profile field: {field!r}")
+        if field not in STRATEGY_FIELDS:
+            raise ValueError(f"Unknown content-strategy field: {field!r}")
+        creator_repository.upsert_profile_field(field, value)
 
-        if settings.database_url:
-            with get_sync_session() as s:
-                s.execute(
-                    pg_insert(CreatorIdeaProfileModel)
-                    .values(id=1, **{field: value}, updated_at=func.now())
-                    .on_conflict_do_update(
-                        index_elements=["id"],
-                        set_={field: value, "updated_at": func.now()},
-                    )
-                )
-                s.commit()
-        else:
-            self._profile_mem[field] = value
-
-    def load_profile(self) -> CreatorIdeaProfile:
-        if settings.database_url:
-            with get_sync_session() as s:
-                row = s.execute(
-                    select(CreatorIdeaProfileModel).where(CreatorIdeaProfileModel.id == 1)
-                ).scalar_one_or_none()
-            if not row:
-                return CreatorIdeaProfile()
-            return CreatorIdeaProfile(
-                niche=row.niche, sub_niche=row.sub_niche,
-                target_audience=row.target_audience, platforms=row.platforms,
-                content_style=row.content_style, monetization=row.monetization,
-            )
-        return CreatorIdeaProfile(**self._profile_mem)
+    def load_profile(self) -> CreatorProfile:
+        return creator_repository.get_profile_sync()
 
     # ── content history ───────────────────────────────────────────────────
 
@@ -156,6 +134,23 @@ class IdeaRepository(IIdeaRepository):
                 ).all()
             return [{"id": r.id, "content": r.content, "timestamp": r.timestamp} for r in rows]
         return [s for s in self._signals_mem if not s.get("signal_type")][:limit]
+
+    def load_signals_by_session(self, session_id: str, limit: int = 500) -> list[dict]:
+        """All signals tagged with one capture session — e.g. one TikTok LIVE
+        stream's captured chat — regardless of analysed/unanalysed status.
+        Oldest first, so a synthesized summary reads in the order viewers
+        actually said things."""
+        if settings.database_url:
+            with get_sync_session() as s:
+                rows = s.execute(
+                    select(AudienceSignalModel.id, AudienceSignalModel.content,
+                           AudienceSignalModel.timestamp)
+                    .where(AudienceSignalModel.session_id == session_id)
+                    .order_by(AudienceSignalModel.timestamp.asc())
+                    .limit(limit)
+                ).all()
+            return [{"id": r.id, "content": r.content, "timestamp": r.timestamp} for r in rows]
+        return [s for s in self._signals_mem if s.get("session_id") == session_id][:limit]
 
     def update_signal_topic(self, signal: dict, signal_type: str, topic: str) -> None:
         """

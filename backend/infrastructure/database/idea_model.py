@@ -1,9 +1,12 @@
 """
 idea_model.py
 ══════════════
-SQLAlchemy ORM models backing the idea-generator domain: the content
-strategy profile, content history, raw audience signals, and the topic
-analytics derived from them.
+SQLAlchemy ORM models backing the idea-generator domain: content history,
+raw audience signals, and the topic analytics derived from them.
+
+The content-strategy profile (niche, sub_niche, target_audience, platforms,
+content_style, monetization) was merged into the unified CreatorProfileModel
+(creator_model.py) and no longer has its own table here.
 """
 import uuid
 from datetime import datetime
@@ -14,21 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.infrastructure.database.db import Base
-
-
-class CreatorIdeaProfileModel(Base):
-    """Idea-generator profile — niche, style, audience. Single row (id = 1)."""
-    __tablename__ = "creator_idea_profile"
-
-    id:              Mapped[int]            = mapped_column(Integer, primary_key=True, default=1)
-    niche:           Mapped[Optional[str]]  = mapped_column(Text)
-    sub_niche:       Mapped[Optional[str]]  = mapped_column(Text)
-    target_audience: Mapped[Optional[str]]  = mapped_column(Text)
-    platforms:       Mapped[Optional[str]]  = mapped_column(Text)
-    content_style:   Mapped[Optional[str]]  = mapped_column(Text)
-    monetization:    Mapped[Optional[str]]  = mapped_column(Text)
-    updated_at:      Mapped[datetime]       = mapped_column(DateTime(timezone=True), server_default=func.now())
+from infrastructure.database.db import Base
 
 
 class ContentHistoryModel(Base):
